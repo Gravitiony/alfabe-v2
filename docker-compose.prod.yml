@@ -1,0 +1,128 @@
+services:
+  alfabemail:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: alfabemail
+    restart: unless-stopped
+    expose:
+      - "3000"
+    env_file: .env.production
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - alfabe_net
+
+  alfabemail-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    container_name: alfabemail-worker
+    restart: unless-stopped
+    command: ["node", "worker/index.mjs"]
+    env_file: .env.production
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    networks:
+      - alfabe_net
+
+  alfabemail-migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    container_name: alfabemail-migrator
+    restart: "no"
+    env_file: .env.production
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - alfabe_net
+
+  mysql:
+    image: mysql:8.4
+    container_name: alfabemail_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-alfabemail}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - alfabe_net
+
+  redis:
+    image: redis:alpine
+    container_name: alfabemail_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks:
+      - alfabe_net
+
+  alfabe-proxy:
+    image: nginx:alpine
+    container_name: alfabe-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot_webroot:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    depends_on:
+      - alfabemail
+    networks:
+      - alfabe_net
+      - mailcow_net
+
+  certbot:
+    image: certbot/certbot
+    container_name: alfabe-certbot
+    volumes:
+      - certbot_webroot:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    entrypoint: >
+      sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+
+volumes:
+  mysql_data:
+  certbot_webroot:
+  certbot_certs:
+
+networks:
+  alfabe_net:
+    name: alfabe_net
+    driver: bridge
+  mailcow_net:
+    name: mailcowdockerized_mailcow-network
+    external: true

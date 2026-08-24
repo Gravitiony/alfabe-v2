@@ -1,0 +1,11 @@
+services:
+  alfabemail:
+    networks:
+      - mailcowdockerized_mailcow-network
+  alfabemail-worker:
+    networks:
+      - mailcowdockerized_mailcow-network
+
+networks:
+  mailcowdockerized_mailcow-network:
+    external: true

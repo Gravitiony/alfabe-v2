@@ -1,0 +1,117 @@
+services:
+  alfabemail:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: alfabemail
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=${DATABASE_URL:-mysql://root:guvenli_sifre@mysql:3306/alfabemail}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - AUTH_SECRET=${AUTH_SECRET:-alfabe-dev-secret-degistirin}
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      - MAIL_DOMAIN=${MAIL_DOMAIN:-alfabe.co}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      alfabemail-migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - alfabe_net
+
+  alfabemail-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    container_name: alfabemail-worker
+    restart: unless-stopped
+    command: ["node", "worker/index.mjs"]
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-mysql://root:guvenli_sifre@mysql:3306/alfabemail}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      - MAIL_DOMAIN=${MAIL_DOMAIN:-alfabe.co}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      alfabemail-migrator:
+        condition: service_completed_successfully
+    networks:
+      - alfabe_net
+
+  alfabemail-migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    container_name: alfabemail-migrator
+    restart: "no"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-mysql://root:guvenli_sifre@mysql:3306/alfabemail}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin123!}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - alfabe_net
+
+  mysql:
+    image: mysql:8.4
+    container_name: alfabemail_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-guvenli_sifre}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-alfabemail}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - alfabe_net
+
+  redis:
+    image: redis:alpine
+    container_name: alfabemail_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks:
+      - alfabe_net
+
+volumes:
+  mysql_data:
+
+networks:
+  alfabe_net:
+    name: alfabe_net
+    driver: bridge

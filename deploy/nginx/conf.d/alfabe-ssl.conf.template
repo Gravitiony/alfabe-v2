@@ -1,0 +1,21 @@
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name alfabe.co www.alfabe.co;
+
+    ssl_certificate     /etc/letsencrypt/live/alfabe.co/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/alfabe.co/privkey.pem;
+
+    client_max_body_size 5m;
+
+    location / {
+        proxy_pass http://alfabemail:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
